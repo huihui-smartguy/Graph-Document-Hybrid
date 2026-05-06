@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VGD Memory OS — Graph-Document Hybrid Demo</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --surface2: #273549;
+      --border: #334155;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent2: #818cf8;
+      --green: #4ade80;
+      --orange: #fb923c;
+      --red: #f87171;
+      --purple: #c084fc;
+
+      --node-person: #60a5fa;
+      --node-company: #4ade80;
+      --node-event: #fb923c;
+      --node-project: #c084fc;
+      --node-location: #f87171;
+      --node-other: #94a3b8;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 20px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+
+    header h1 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.05em;
+    }
+
+    header .subtitle {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .stats-bar {
+      margin-left: auto;
+      display: flex;
+      gap: 20px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .stats-bar span strong {
+      color: var(--text);
+    }
+
+    .main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* Graph Panel */
+    .graph-panel {
+      flex: 0 0 58%;
+      position: relative;
+      border-right: 1px solid var(--border);
+      background: var(--bg);
+    }
+
+    #graph-svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .graph-legend {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      background: rgba(30,41,59,0.92);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 11px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-muted);
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .graph-tip {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      font-size: 11px;
+      color: var(--text-muted);
+      background: rgba(30,41,59,0.85);
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+
+    /* Right panel */
+    .right-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+
+    .tab {
+      padding: 12px 20px;
+      font-size: 13px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      color: var(--text-muted);
+      transition: all 0.15s;
+      user-select: none;
+    }
+
+    .tab:hover { color: var(--text); }
+
+    .tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+      background: var(--surface2);
+    }
+
+    .tab-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: none;
+    }
+
+    .tab-content.active { display: block; }
+
+    /* Form elements */
+    textarea {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 13px;
+      padding: 10px 12px;
+      resize: vertical;
+      min-height: 100px;
+      font-family: inherit;
+      line-height: 1.5;
+    }
+
+    textarea:focus { outline: none; border-color: var(--accent); }
+
+    input[type="text"] {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 13px;
+      padding: 10px 12px;
+      font-family: inherit;
+    }
+
+    input[type="text"]:focus { outline: none; border-color: var(--accent); }
+
+    .btn {
+      padding: 9px 18px;
+      border-radius: 7px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: all 0.15s;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #0f172a;
+    }
+
+    .btn-primary:hover { background: #7dd3fc; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-secondary {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover { background: var(--border); }
+
+    .btn-danger {
+      background: transparent;
+      color: var(--red);
+      border: 1px solid var(--red);
+      font-size: 11px;
+      padding: 5px 10px;
+    }
+
+    .btn-danger:hover { background: rgba(248,113,113,0.1); }
+
+    .form-group {
+      margin-bottom: 14px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    /* Result boxes */
+    .result-box {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      margin-top: 14px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .result-box.thinking {
+      border-color: var(--accent2);
+      background: rgba(129,140,248,0.05);
+    }
+
+    .result-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 8px;
+    }
+
+    .result-label.thinking-label { color: var(--accent2); }
+    .result-label.answer-label { color: var(--green); }
+    .result-label.graph-label { color: var(--orange); }
+
+    /* Status */
+    .status-msg {
+      padding: 10px 14px;
+      border-radius: 7px;
+      font-size: 13px;
+      margin-top: 12px;
+    }
+
+    .status-msg.success { background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.3); color: var(--green); }
+    .status-msg.error { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.3); color: var(--red); }
+    .status-msg.loading { background: rgba(56,189,248,0.1); border: 1px solid rgba(56,189,248,0.3); color: var(--accent); }
+
+    /* Spinner */
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(56,189,248,0.3);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Wiki panel */
+    .wiki-search-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .entity-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+
+    .entity-chip {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .entity-chip:hover { border-color: var(--accent); }
+
+    .entity-chip .label-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+
+    .entity-chip .name { font-size: 13px; flex: 1; }
+    .entity-chip .uuid { font-size: 10px; color: var(--text-muted); font-family: monospace; }
+
+    .wiki-content {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    /* Markdown styles */
+    .wiki-content h1, .wiki-content h2, .wiki-content h3 {
+      color: var(--accent);
+      margin: 12px 0 6px;
+      line-height: 1.3;
+    }
+
+    .wiki-content h1 { font-size: 18px; }
+    .wiki-content h2 { font-size: 15px; }
+    .wiki-content h3 { font-size: 13px; }
+
+    .wiki-content p { margin: 8px 0; font-size: 13px; line-height: 1.6; }
+
+    .wiki-content ul, .wiki-content ol {
+      margin: 6px 0 6px 20px;
+      font-size: 13px;
+    }
+
+    .wiki-content li { margin: 3px 0; line-height: 1.5; }
+
+    .wiki-content hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 12px 0;
+    }
+
+    .wiki-content code {
+      background: var(--bg);
+      border-radius: 3px;
+      padding: 1px 5px;
+      font-size: 12px;
+      font-family: monospace;
+    }
+
+    .wiki-content pre {
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 10px;
+      overflow-x: auto;
+      margin: 8px 0;
+    }
+
+    /* D3 tooltip */
+    .d3-tooltip {
+      position: absolute;
+      background: rgba(30,41,59,0.97);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 8px 12px;
+      font-size: 12px;
+      pointer-events: none;
+      z-index: 100;
+      max-width: 200px;
+    }
+
+    .d3-tooltip .t-name { font-weight: 700; margin-bottom: 2px; }
+    .d3-tooltip .t-label { font-size: 10px; color: var(--text-muted); }
+
+    /* Traversal info */
+    .traversal-info {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 10px;
+      padding: 8px 10px;
+      background: var(--surface2);
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+
+    .traversal-info strong { color: var(--orange); }
+
+    /* Section divider */
+    .section-divider {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      margin: 16px 0 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* Example data button */
+    .example-btn {
+      font-size: 11px;
+      padding: 6px 12px;
+    }
+
+    /* Graph highlighted nodes */
+    .node-highlighted circle {
+      stroke: #fbbf24 !important;
+      stroke-width: 3px !important;
+    }
+
+    .link-highlighted {
+      stroke: #fbbf24 !important;
+      stroke-opacity: 1 !important;
+      stroke-width: 2.5px !important;
+    }
+
+    /* Depth indicator */
+    .depth-control {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .depth-control label { font-size: 12px; color: var(--text-muted); }
+    .depth-control input[type=range] { flex: 1; accent-color: var(--accent); }
+    .depth-control span { font-size: 12px; min-width: 20px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>VGD Memory OS</h1>
+    <span class="subtitle">由图引路，由文生智 · Graph-Document Hybrid Demo</span>
+    <div class="stats-bar">
+      <span>节点 <strong id="stat-nodes">0</strong></span>
+      <span>边 <strong id="stat-edges">0</strong></span>
+      <span>Wiki <strong id="stat-wikis">0</strong></span>
+    </div>
+  </header>
+
+  <div class="main">
+    <!-- Graph Panel -->
+    <div class="graph-panel">
+      <div class="graph-tip">拖拽节点 · 滚轮缩放 · 点击查看 Wiki</div>
+      <svg id="graph-svg"></svg>
+      <div class="graph-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--node-person)"></div>PERSON</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--node-company)"></div>COMPANY</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--node-event)"></div>EVENT</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--node-project)"></div>PROJECT</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--node-location)"></div>LOCATION</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--node-other)"></div>OTHER</div>
+      </div>
+    </div>
+
+    <!-- Right Panel -->
+    <div class="right-panel">
+      <div class="tabs">
+        <div class="tab active" data-tab="ingest">摄入知识</div>
+        <div class="tab" data-tab="query">智能问答</div>
+        <div class="tab" data-tab="wiki">实体百科</div>
+      </div>
+
+      <!-- Ingest Tab -->
+      <div class="tab-content active" id="tab-ingest">
+        <div class="section-divider">文本摄入</div>
+        <div class="form-group">
+          <label>输入文本（支持中英文，将自动抽取实体和关系）</label>
+          <textarea id="ingest-text" rows="6" placeholder="粘贴任意文本，例如：新闻、简介、报告..."></textarea>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="doIngest()">摄入知识图谱</button>
+          <button class="btn btn-secondary example-btn" onclick="loadExample()">加载示例数据</button>
+        </div>
+        <div id="ingest-status"></div>
+
+        <div class="section-divider" style="margin-top:20px">示例数据</div>
+        <div style="font-size:12px;color:var(--text-muted);line-height:1.6">
+          点击「加载示例数据」将自动注入一段科技公司场景文本，展示 Gbrain 实体抽取和 LLM-Wiki 页面生成全流程。
+          摄入完成后图谱将自动刷新，可在「实体百科」中查看生成的 Wiki 页面，并在「智能问答」中提问。
+        </div>
+      </div>
+
+      <!-- Query Tab -->
+      <div class="tab-content" id="tab-query">
+        <div class="section-divider">混合检索问答</div>
+        <div class="form-group">
+          <label>提问（系统将通过 BFS 图遍历 + Wiki 上下文综合作答）</label>
+          <input type="text" id="query-input" placeholder="例如：谁创立了 OpenAI？他们的投资人是谁？" />
+        </div>
+        <div class="depth-control">
+          <label>图遍历深度</label>
+          <input type="range" id="depth-range" min="1" max="5" value="3" oninput="document.getElementById('depth-val').textContent=this.value" />
+          <span id="depth-val">3</span>
+        </div>
+        <div class="btn-row" style="margin-top:12px">
+          <button class="btn btn-primary" onclick="doQuery()">提问</button>
+        </div>
+        <div id="query-status"></div>
+        <div id="query-results"></div>
+      </div>
+
+      <!-- Wiki Tab -->
+      <div class="tab-content" id="tab-wiki">
+        <div class="section-divider">实体百科</div>
+        <div class="entity-list" id="entity-list">
+          <div style="font-size:12px;color:var(--text-muted)">摄入知识后，实体将显示在此处</div>
+        </div>
+        <div id="wiki-display"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="d3-tooltip" id="tooltip" style="display:none"></div>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+const state = {
+  nodes: [],
+  edges: [],
+  highlightedNodes: new Set(),
+  highlightedEdges: new Set(),
+};
+
+// ─── D3 Graph ─────────────────────────────────────────────────────────────────
+const svg = d3.select('#graph-svg');
+const tooltip = document.getElementById('tooltip');
+let width, height, simulation, gLinks, gNodes, gLabels;
+
+const labelColor = {
+  PERSON: 'var(--node-person)',
+  COMPANY: 'var(--node-company)',
+  EVENT: 'var(--node-event)',
+  PROJECT: 'var(--node-project)',
+  LOCATION: 'var(--node-location)',
+  OTHER: 'var(--node-other)',
+};
+
+function nodeColor(label) {
+  return labelColor[label] || labelColor.OTHER;
+}
+
+function nodeRadius(label) {
+  if (label === 'COMPANY') return 14;
+  if (label === 'PERSON') return 11;
+  if (label === 'PROJECT') return 10;
+  return 9;
+}
+
+function initGraph() {
+  const panel = document.querySelector('.graph-panel');
+  width = panel.clientWidth;
+  height = panel.clientHeight;
+
+  svg.attr('viewBox', `0 0 ${width} ${height}`);
+
+  const defs = svg.append('defs');
+  defs.append('marker')
+    .attr('id', 'arrow')
+    .attr('viewBox', '0 -4 8 8')
+    .attr('refX', 22)
+    .attr('refY', 0)
+    .attr('markerWidth', 6)
+    .attr('markerHeight', 6)
+    .attr('orient', 'auto')
+    .append('path')
+    .attr('d', 'M0,-4L8,0L0,4')
+    .attr('fill', '#475569');
+
+  const g = svg.append('g').attr('class', 'graph-root');
+
+  svg.call(
+    d3.zoom()
+      .scaleExtent([0.2, 4])
+      .on('zoom', (event) => g.attr('transform', event.transform))
+  );
+
+  gLinks = g.append('g').attr('class', 'links');
+  gNodes = g.append('g').attr('class', 'nodes');
+  gLabels = g.append('g').attr('class', 'labels');
+
+  simulation = d3.forceSimulation()
+    .force('link', d3.forceLink().id(d => d.uuid).distance(120))
+    .force('charge', d3.forceManyBody().strength(-300))
+    .force('center', d3.forceCenter(width / 2, height / 2))
+    .force('collision', d3.forceCollide(28));
+}
+
+function renderGraph() {
+  const nodeMap = new Map(state.nodes.map(n => [n.uuid, n]));
+
+  const links = state.edges
+    .filter(e => nodeMap.has(e.src_uuid) && nodeMap.has(e.tgt_uuid))
+    .map(e => ({
+      ...e,
+      source: e.src_uuid,
+      target: e.tgt_uuid,
+    }));
+
+  // Links
+  const link = gLinks.selectAll('line').data(links, d => d.id);
+  link.exit().remove();
+  const linkEnter = link.enter().append('line')
+    .attr('stroke', '#475569')
+    .attr('stroke-opacity', 0.6)
+    .attr('stroke-width', 1.2)
+    .attr('marker-end', 'url(#arrow)');
+  const linkMerge = linkEnter.merge(link);
+
+  // Link labels
+  const linkLabel = gLinks.selectAll('text.link-label').data(links, d => d.id);
+  linkLabel.exit().remove();
+  const linkLabelEnter = linkLabel.enter().append('text')
+    .attr('class', 'link-label')
+    .attr('font-size', 9)
+    .attr('fill', '#64748b')
+    .attr('text-anchor', 'middle')
+    .attr('pointer-events', 'none');
+  const linkLabelMerge = linkLabelEnter.merge(linkLabel);
+  linkLabelMerge.text(d => d.relation);
+
+  // Nodes
+  const node = gNodes.selectAll('g.node').data(state.nodes, d => d.uuid);
+  node.exit().remove();
+  const nodeEnter = node.enter().append('g').attr('class', 'node')
+    .style('cursor', 'pointer')
+    .call(
+      d3.drag()
+        .on('start', (event, d) => {
+          if (!event.active) simulation.alphaTarget(0.3).restart();
+          d.fx = d.x; d.fy = d.y;
+        })
+        .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
+        .on('end', (event, d) => {
+          if (!event.active) simulation.alphaTarget(0);
+          d.fx = null; d.fy = null;
+        })
+    )
+    .on('click', (event, d) => {
+      event.stopPropagation();
+      openWiki(d.uuid, d.name);
+    })
+    .on('mouseover', (event, d) => {
+      tooltip.style.display = 'block';
+      tooltip.innerHTML = `<div class="t-name">${d.name}</div><div class="t-label">${d.label}</div>`;
+    })
+    .on('mousemove', (event) => {
+      tooltip.style.left = (event.pageX + 14) + 'px';
+      tooltip.style.top = (event.pageY - 30) + 'px';
+    })
+    .on('mouseout', () => { tooltip.style.display = 'none'; });
+
+  nodeEnter.append('circle')
+    .attr('r', d => nodeRadius(d.label))
+    .attr('fill', d => nodeColor(d.label))
+    .attr('stroke', '#1e293b')
+    .attr('stroke-width', 2);
+
+  const nodeMerge = nodeEnter.merge(node);
+  nodeMerge.select('circle')
+    .attr('r', d => nodeRadius(d.label))
+    .attr('fill', d => nodeColor(d.label));
+
+  // Apply highlights
+  nodeMerge.select('circle')
+    .attr('stroke', d => state.highlightedNodes.has(d.uuid) ? '#fbbf24' : '#1e293b')
+    .attr('stroke-width', d => state.highlightedNodes.has(d.uuid) ? 3 : 2);
+
+  linkMerge
+    .attr('stroke', d => state.highlightedEdges.has(d.id) ? '#fbbf24' : '#475569')
+    .attr('stroke-opacity', d => state.highlightedEdges.has(d.id) ? 1 : 0.6)
+    .attr('stroke-width', d => state.highlightedEdges.has(d.id) ? 2.5 : 1.2);
+
+  // Node labels
+  const label = gLabels.selectAll('text.node-label').data(state.nodes, d => d.uuid);
+  label.exit().remove();
+  const labelEnter = label.enter().append('text')
+    .attr('class', 'node-label')
+    .attr('font-size', 10)
+    .attr('fill', '#cbd5e1')
+    .attr('text-anchor', 'middle')
+    .attr('dy', d => nodeRadius(d.label) + 13)
+    .attr('pointer-events', 'none');
+  const labelMerge = labelEnter.merge(label);
+  labelMerge.text(d => d.name.length > 12 ? d.name.slice(0, 12) + '…' : d.name);
+
+  simulation
+    .nodes(state.nodes)
+    .on('tick', () => {
+      linkMerge
+        .attr('x1', d => d.source.x)
+        .attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x)
+        .attr('y2', d => d.target.y);
+
+      linkLabelMerge
+        .attr('x', d => (d.source.x + d.target.x) / 2)
+        .attr('y', d => (d.source.y + d.target.y) / 2 - 4);
+
+      nodeMerge.attr('transform', d => `translate(${d.x},${d.y})`);
+      labelMerge.attr('transform', d => `translate(${d.x},${d.y})`);
+    });
+
+  simulation.force('link').links(links);
+  simulation.alpha(0.3).restart();
+}
+
+// ─── API Calls ────────────────────────────────────────────────────────────────
+async function fetchGraph() {
+  const res = await fetch('/api/graph');
+  const data = await res.json();
+  state.nodes = data.nodes;
+  state.edges = data.edges;
+  renderGraph();
+  await fetchStats();
+  refreshEntityList();
+}
+
+async function fetchStats() {
+  const res = await fetch('/api/stats');
+  const data = await res.json();
+  document.getElementById('stat-nodes').textContent = data.total_nodes;
+  document.getElementById('stat-edges').textContent = data.total_edges;
+  document.getElementById('stat-wikis').textContent = data.total_wikis;
+}
+
+function showStatus(containerId, msg, type) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = `<div class="status-msg ${type}">${type === 'loading' ? '<span class="spinner"></span>' : ''}${msg}</div>`;
+}
+
+async function doIngest() {
+  const text = document.getElementById('ingest-text').value.trim();
+  if (!text) { showStatus('ingest-status', '请输入文本', 'error'); return; }
+
+  showStatus('ingest-status', '正在抽取实体和关系，生成 Wiki 页面…', 'loading');
+
+  try {
+    const res = await fetch('/api/ingest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '未知错误');
+    const s = data.stats;
+    showStatus('ingest-status',
+      `✓ 摄入成功：抽取三元组 ${s.triples} 条，创建/更新节点 ${s.nodes} 个，边 ${s.edges} 条，Wiki 页面 ${s.wikis_updated} 篇`,
+      'success');
+    await fetchGraph();
+  } catch (e) {
+    showStatus('ingest-status', '✗ 摄入失败：' + e.message, 'error');
+  }
+}
+
+async function doQuery() {
+  const question = document.getElementById('query-input').value.trim();
+  const maxDepth = parseInt(document.getElementById('depth-range').value);
+  if (!question) { showStatus('query-status', '请输入问题', 'error'); return; }
+
+  showStatus('query-status', '由图引路：BFS 图遍历中… 由文生智：聚合 Wiki 上下文… Claude Opus 4.7 思考中…', 'loading');
+  document.getElementById('query-results').innerHTML = '';
+
+  // Clear highlights
+  state.highlightedNodes.clear();
+  state.highlightedEdges.clear();
+  renderGraph();
+
+  try {
+    const res = await fetch('/api/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, max_depth: maxDepth }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '未知错误');
+
+    const r = data.result;
+
+    // Highlight traversal
+    if (r.traversal && r.traversal.visited_uuids) {
+      r.traversal.visited_uuids.forEach(uid => state.highlightedNodes.add(uid));
+    }
+    if (r.traversal && r.traversal.path_edges) {
+      r.traversal.path_edges.forEach(e => state.highlightedEdges.add(e.id));
+    }
+    renderGraph();
+
+    showStatus('query-status', '', '');
+    document.getElementById('query-status').innerHTML = '';
+
+    let html = '';
+
+    // Traversal info
+    if (r.nodes_visited > 0) {
+      html += `<div class="traversal-info">
+        <strong>图遍历</strong> 发现 <strong>${r.nodes_visited}</strong> 个相关实体，
+        深度 ${maxDepth}，起始实体：${(r.entities_found || []).join('、') || '(全图)'}
+      </div>`;
+    }
+
+    // Thinking block
+    if (r.thinking) {
+      html += `<div class="result-box thinking">
+        <div class="result-label thinking-label">Claude 推理过程</div>
+        <div>${r.thinking}</div>
+      </div>`;
+    }
+
+    // Answer
+    html += `<div class="result-box">
+      <div class="result-label answer-label">综合回答</div>
+      <div class="wiki-content">${marked.parse(r.answer || '（无回答）')}</div>
+    </div>`;
+
+    document.getElementById('query-results').innerHTML = html;
+  } catch (e) {
+    showStatus('query-status', '✗ 查询失败：' + e.message, 'error');
+  }
+}
+
+// ─── Wiki Tab ─────────────────────────────────────────────────────────────────
+function refreshEntityList() {
+  const list = document.getElementById('entity-list');
+  if (state.nodes.length === 0) {
+    list.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">摄入知识后，实体将显示在此处</div>';
+    return;
+  }
+  list.innerHTML = state.nodes.map(n => {
+    const color = nodeColor(n.label);
+    return `<div class="entity-chip" onclick="openWiki('${n.uuid}','${n.name.replace(/'/g, "\\'")}')">
+      <div class="label-badge" style="background:${color}22;color:${color}">${n.label}</div>
+      <div class="name">${n.name}</div>
+      <div class="uuid">${n.uuid.slice(0, 8)}</div>
+    </div>`;
+  }).join('');
+}
+
+async function openWiki(uuid, name) {
+  // Switch to wiki tab
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelector('[data-tab="wiki"]').classList.add('active');
+  document.getElementById('tab-wiki').classList.add('active');
+
+  const display = document.getElementById('wiki-display');
+  display.innerHTML = `<div class="status-msg loading"><span class="spinner"></span>加载 Wiki：${name}</div>`;
+
+  try {
+    const res = await fetch(`/api/wiki/${uuid}`);
+    if (!res.ok) {
+      if (res.status === 404) {
+        display.innerHTML = `<div class="status-msg error">该实体暂无 Wiki 页面（先摄入相关文本）</div>`;
+      } else {
+        throw new Error(await res.text());
+      }
+      return;
+    }
+    const data = await res.json();
+    display.innerHTML = `
+      <div class="wiki-content">
+        <div class="result-label answer-label" style="margin-bottom:12px">
+          Wiki · ${data.entity_name}
+          <span style="font-weight:400;color:var(--text-muted);margin-left:8px">v${data.version_hash}</span>
+        </div>
+        ${marked.parse(data.content_markdown)}
+      </div>`;
+  } catch (e) {
+    display.innerHTML = `<div class="status-msg error">加载失败：${e.message}</div>`;
+  }
+}
+
+// ─── Example Data ─────────────────────────────────────────────────────────────
+const EXAMPLE_TEXT = `Sam Altman is the CEO of OpenAI, a leading artificial intelligence research company based in San Francisco.
+OpenAI was founded in 2015 by Sam Altman, Elon Musk, Greg Brockman, Ilya Sutskever, and others.
+Microsoft has invested over $13 billion in OpenAI, making it one of the company's largest backers.
+Elon Musk later departed from the OpenAI board and founded xAI, a competing AI company.
+xAI developed Grok, a large language model integrated into X (formerly Twitter).
+Elon Musk also leads Tesla, the electric vehicle company, and SpaceX, the aerospace manufacturer.
+SpaceX developed the Starship rocket at its facility in Boca Chica, Texas.
+Greg Brockman served as OpenAI's President and led the engineering team that built GPT-4 and ChatGPT.
+ChatGPT, launched in November 2022, became the fastest-growing consumer application in history.
+OpenAI partnered with Microsoft to integrate GPT-4 into Azure and Microsoft Office products.
+Sam Altman was briefly fired from OpenAI in November 2023 but was reinstated within days after backlash from employees and investors.
+Ilya Sutskever, OpenAI's chief scientist, later founded a new AI safety company called Safe Superintelligence Inc.`;
+
+async function loadExample() {
+  document.getElementById('ingest-text').value = EXAMPLE_TEXT;
+  await doIngest();
+}
+
+// ─── Tabs ─────────────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    if (tab.dataset.tab === 'wiki') refreshEntityList();
+  });
+});
+
+// Press Enter to query
+document.getElementById('query-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doQuery();
+});
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+initGraph();
+fetchGraph();
+setInterval(fetchGraph, 30000);
+</script>
+</body>
+</html>
