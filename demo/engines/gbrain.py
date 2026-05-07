@@ -1,12 +1,26 @@
 import hashlib
 import json
+import os
 import re
-from typing import Dict, List, Optional, Tuple
-
-import anthropic
+import sys
+import traceback
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 
 from core.models import GraphNode, TraversalResult, TripleDTO, make_uuid
 from core.ports import IDocumentStoragePort, IGraphStoragePort
+from engines.provider import get_provider
+
+
+def _log(step: str, msg: str = "", data: Any = None) -> None:
+    ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+    parts = [f"[{ts}]", f"[Gbrain-{step}]"]
+    if msg:
+        parts.append(msg)
+    if data is not None:
+        preview = str(data)[:300].replace("\n", "\\n")
+        parts.append(f"| {preview}")
+    print(" ".join(parts), file=sys.stderr)
 
 NER_SYSTEM_PROMPT = """You are an expert knowledge extraction system for a knowledge graph.
 Extract named entities and their relationships from the given text.
@@ -35,13 +49,16 @@ class GbrainEngine:
     def __init__(self, graph: IGraphStoragePort, docs: IDocumentStoragePort):
         self.graph = graph
         self.docs = docs
-        self.client = anthropic.Anthropic()
+        self.provider = get_provider()
 
     def extract_triples(self, text: str) -> List[TripleDTO]:
+        raw = ""
+        _log("extract_triples", f"输入文本长度={len(text)}", f"前100字={text[:100]}")
         try:
-            response = self.client.messages.create(
-                model="claude-haiku-4-5",
-                max_tokens=2048,
+            _log("extract_triples", "准备调用 provider.messages_create ...")
+            response = self.provider.messages_create(
+                model=os.getenv("VGD_EXTRACT_MODEL", "claude-haiku-4-5"),
+                max_tokens=8192,
                 system=[
                     {
                         "type": "text",
@@ -56,12 +73,22 @@ class GbrainEngine:
                     }
                 ],
             )
-            raw = response.content[0].text.strip()
+            _log("extract_triples", "provider.messages_create 返回成功")
+
+            _log("extract_triples", "调用 provider.extract_text 解析响应 ...")
+            raw = self.provider.extract_text(response)
+            _log("extract_triples", f"extract_text 返回长度={len(raw)}", f"前150字={raw[:150]}")
+
+            _log("extract_triples", "清理 markdown 代码块标记 ...")
             raw = re.sub(r"^```(?:json)?\n?", "", raw)
             raw = re.sub(r"\n?```$", "", raw)
+
+            _log("extract_triples", "解析 JSON ...")
             data = json.loads(raw)
+            _log("extract_triples", f"JSON 解析成功, 三元组数量={len(data)}")
+
             triples = []
-            for item in data:
+            for i, item in enumerate(data):
                 triples.append(
                     TripleDTO(
                         subject=item.get("subject", ""),
@@ -71,9 +98,16 @@ class GbrainEngine:
                         object_label=item.get("object_label", "OTHER"),
                     )
                 )
+            _log("extract_triples", f"成功构造 {len(triples)} 个 TripleDTO 对象")
             return triples
+        except json.JSONDecodeError as e:
+            _log("extract_triples", f"JSON 解析失败: {e}")
+            _log("extract_triples", f"原始响应内容={raw[:500]}")
+            traceback.print_exc(file=sys.stderr)
+            return []
         except Exception as e:
-            print(f"[GbrainEngine] extract_triples error: {e}")
+            _log("extract_triples", f"extract_triples 异常: {type(e).__name__}: {e}")
+            traceback.print_exc(file=sys.stderr)
             return []
 
     def _get_or_create_node(self, name: str, label: str) -> GraphNode:

@@ -1,0 +1,15 @@
+{
+  "host": "0.0.0.0",
+  "port": 8001,
+  "llm": {
+    "provider": "openai",
+    "base_url": "",
+    "api_key": "",
+    "ssl_verify": false,
+    "models": {
+      "extract": "",
+      "wiki": "",
+      "reason": ""
+    }
+  }
+}

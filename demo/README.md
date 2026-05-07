@@ -11,14 +11,20 @@
 ### 1.1 环境要求
 
 - Python ≥ 3.10
-- 一个有效的 **Anthropic API Key**（设置为环境变量 `ANTHROPIC_API_KEY`）
+- 至少一个 **LLM API Key**（根据选择的提供商配置）：
+
+| 提供商 | 环境变量 | 获取方式 |
+|--------|---------|---------|
+| Anthropic（默认） | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) |
+| OpenAI | `OPENAI_API_KEY` | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+| DeepSeek | `ANTHROPIC_API_KEY` | [platform.deepseek.com](https://platform.deepseek.com) |
 
 ### 1.2 安装与启动
 
 ```bash
 cd demo
 pip install -r requirements.txt
-export ANTHROPIC_API_KEY=sk-ant-xxx        # Linux/macOS
+export ANTHROPIC_API_KEY=sk-ant-xxx        # Linux/macOS — Anthropic
 # set ANTHROPIC_API_KEY=sk-ant-xxx         # Windows
 python run.py
 ```
@@ -30,6 +36,221 @@ python run.py
 1. **摄入知识** Tab → 点击「加载示例数据」按钮 → 系统会自动注入一段科技公司场景文本
 2. 等待几秒（Claude Haiku 4.5 抽取三元组 + 生成 Wiki），左侧图谱自动绘制
 3. **智能问答** Tab → 输入「Who founded OpenAI? Who invested in it?」→ 观察图遍历高亮 + Claude Opus 4.7 综合作答
+
+### 1.4 启动配置选项
+
+`run.py` 支持通过命令行参数或配置文件自定义服务运行地址和端口，并在启动前自动检测端口占用情况。
+
+#### 命令行参数
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--host` | str | `0.0.0.0` | 服务监听地址 |
+| `--port` | int | `8000` | 服务监听端口 |
+| `--config` | str | `server_config.json` | JSON 配置文件路径 |
+| `--no-reload` | flag | 启用热重载 | 禁用代码热重载 |
+| `--auto-port` | flag | 无 | 端口被占用时自动分配可用端口 |
+
+```bash
+# 自定义地址和端口
+python run.py --host 127.0.0.1 --port 8080
+
+# 指定端口，被占用时自动分配可用端口
+python run.py --port 9000 --auto-port
+
+# 禁用热重载（生产环境推荐）
+python run.py --no-reload
+
+# 从自定义配置文件读取
+python run.py --config my_server.json
+```
+
+#### 配置文件方式
+
+创建 `server_config.json`（默认路径，可通过 `--config` 指定其他路径）：
+
+```json
+{
+  "host": "127.0.0.1",
+  "port": 8080
+}
+```
+
+**配置优先级**：命令行参数 > 配置文件 > 默认值（`0.0.0.0:8000`）
+
+#### 端口检测与自动分配
+
+服务启动前自动检测指定端口是否可用：
+
+- **端口正常**：直接启动服务，输出启动横幅
+- **端口被占用 + 未指定 `--auto-port`**：打印错误提示及解决方案（含跨平台释放命令），以 exit code 1 退出
+- **端口被占用 + 指定 `--auto-port`**：自动搜索 `port+1` 至 `port+100` 范围内的可用端口，找到后自动启动
+
+错误提示示例：
+
+```
+============================================================
+  [错误] 端口 8000 已被占用，无法启动服务！
+============================================================
+  [解决方案]
+    方案一：指定其他端口
+      python run.py --port 8001
+    方案二：自动分配可用端口
+      python run.py --port 8000 --auto-port
+    方案三：查找并释放占用端口的进程
+      netstat -ano | findstr :8000    # Windows
+      taskkill /PID <进程ID> /F
+      lsof -i :8000                    # Linux/macOS
+      kill -9 <PID>
+```
+
+### 1.5 LLM 后端配置
+
+`server_config.json` 支持通过 `llm` 节点配置 LLM 后端，切换不同的 API 提供商（如 DeepSeek 的 Anthropic 兼容 API），无需修改引擎代码。
+
+#### 配置项说明
+
+`llm` 节点支持 **`provider`** 字段，可选值为 `"anthropic"`（默认）或 `"openai"`。不同 provider 使用不同的环境变量映射：
+
+```json
+{
+  "host": "0.0.0.0",
+  "port": 8000,
+  "llm": {
+    "provider": "anthropic",
+    "base_url": "",
+    "api_key": "",
+    "models": {
+      "extract": "",
+      "wiki": "",
+      "reason": ""
+    }
+  }
+}
+```
+
+##### Anthropic / DeepSeek 兼容模式（`provider: "anthropic"`）
+
+| 配置路径 | 环境变量 | 默认值 | 说明 |
+|----------|---------|--------|------|
+| `llm.provider` | `LLM_PROVIDER` | `"anthropic"` | LLM 提供商类型 |
+| `llm.base_url` | `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | API 端点地址 |
+| `llm.api_key` | `ANTHROPIC_API_KEY` | 环境变量值 | API 密钥 |
+| `llm.ssl_verify` | `OPENAI_SSL_VERIFY` | `true` | SSL 证书验证（仅 OpenAI 模式生效） |
+| `llm.models.extract` | `VGD_EXTRACT_MODEL` | `claude-haiku-4-5` | 实体抽取与三元组提取的模型 |
+| `llm.models.wiki` | `VGD_WIKI_MODEL` | `claude-haiku-4-5` | Wiki 创建与更新的模型 |
+| `llm.models.reason` | `VGD_REASON_MODEL` | `claude-opus-4-7` | 综合推理问答的模型 |
+
+##### OpenAI 模式（`provider: "openai"`）
+
+```json
+{
+  "host": "0.0.0.0",
+  "port": 8000,
+  "llm": {
+    "provider": "openai",
+    "base_url": "https://api.deepseek.com/v1",
+    "api_key": "sk-你的DeepSeek密钥",
+    "ssl_verify": false,
+    "models": {
+      "extract": "deepseek-v4-flash",
+      "wiki": "deepseek-v4-flash",
+      "reason": "deepseek-v4-pro"
+    }
+  }
+}
+```
+
+| 配置路径 | 环境变量 | 默认值 | 说明 |
+|----------|---------|--------|------|
+| `llm.provider` | `LLM_PROVIDER` | `"anthropic"` | 须设为 `"openai"` |
+| `llm.base_url` | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI 兼容 API 端点 |
+| `llm.api_key` | `OPENAI_API_KEY` | 环境变量值 | API 密钥 |
+| `llm.ssl_verify` | `OPENAI_SSL_VERIFY` | `true` | SSL 证书验证（企业网络代理需设为 `false`） |
+| `llm.models.extract` | `VGD_EXTRACT_MODEL` | `claude-haiku-4-5` | 建议用 `deepseek-v4-flash` |
+| `llm.models.wiki` | `VGD_WIKI_MODEL` | `claude-haiku-4-5` | 建议用 `deepseek-v4-flash` |
+| `llm.models.reason` | `VGD_REASON_MODEL` | `claude-opus-4-7` | 建议用 `deepseek-v4-pro` |
+
+**配置优先级**：配置文件 `llm` 节点 > 已设置的环境变量 > 引擎代码中的默认值。
+
+> 留空的配置项不会覆盖已有的环境变量，仅非空值生效。例如 `"api_key": ""` 表示继续使用对应的环境变量（`ANTHROPIC_API_KEY` 或 `OPENAI_API_KEY`）。
+
+#### 典型场景：切换至 DeepSeek V4
+
+1. 确认 `server_config.json` 中 `llm.provider` 为 `"anthropic"`（或留空）
+2. 填入 DeepSeek 的 `base_url` 和 `api_key`，以及对应的模型名
+3. 启动方式不变：
+
+```bash
+python run.py
+```
+
+启动日志中会输出 LLM 配置生效信息：
+
+```
+[配置] 已加载配置文件: server_config.json
+[配置] LLM 提供商: anthropic
+[配置] ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
+[配置] ANTHROPIC_API_KEY=sk-5****e4
+[配置] VGD_EXTRACT_MODEL=deepseek-v4-flash
+[配置] VGD_WIKI_MODEL=deepseek-v4-flash
+[配置] VGD_REASON_MODEL=deepseek-v4-pro
+```
+
+#### 典型场景：切换至 OpenAI
+
+1. 在 `server_config.json` 中设置 `llm.provider` 为 `"openai"`
+2. 填写 `base_url`、`api_key` 和建议的模型名
+3. 启动方式不变：
+
+```bash
+python run.py
+```
+
+启动日志：
+
+```
+[配置] 已加载配置文件: server_config.json
+[配置] LLM 提供商: openai
+[配置] OPENAI_BASE_URL=https://api.openai.com/v1
+[配置] OPENAI_API_KEY=sk-****abcd
+[配置] VGD_EXTRACT_MODEL=gpt-4o-mini
+[配置] VGD_WIKI_MODEL=gpt-4o-mini
+[配置] VGD_REASON_MODEL=gpt-4o
+```
+
+#### 环境变量方式（备选）
+
+也可完全通过环境变量配置，不修改配置文件：
+
+```bash
+# 切换至 DeepSeek（Windows）
+set LLM_PROVIDER=anthropic
+set ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
+set ANTHROPIC_API_KEY=sk-你的DeepSeek密钥
+set VGD_EXTRACT_MODEL=deepseek-v4-flash
+set VGD_WIKI_MODEL=deepseek-v4-flash
+set VGD_REASON_MODEL=deepseek-v4-pro
+python run.py
+
+# 切换至 OpenAI（Windows）
+set LLM_PROVIDER=openai
+set OPENAI_BASE_URL=https://api.openai.com/v1
+set OPENAI_API_KEY=sk-你的OpenAI密钥
+set VGD_EXTRACT_MODEL=gpt-4o-mini
+set VGD_WIKI_MODEL=gpt-4o-mini
+set VGD_REASON_MODEL=gpt-4o
+python run.py
+
+# Linux/macOS 将 set 换为 export 即可
+```
+
+#### 模型对照参考
+
+| 角色 | Anthropic 模型 | DeepSeek V4 模型 | OpenAI 模型 | 说明 |
+|------|---------------|-----------------|------------|------|
+| 轻量抽取 | `claude-haiku-4-5` | `deepseek-v4-flash` | `gpt-4o-mini` | 实体识别、关系提取、Wiki 生成 |
+| 深度推理 | `claude-opus-4-7` | `deepseek-v4-pro` | `gpt-4o` | 综合问答、跨实体推理 |
 
 ---
 
@@ -141,7 +362,8 @@ demo/
 ├── engines/
 │   ├── gbrain.py               # 知识图谱引擎（NER+RE+BFS）
 │   ├── llm_wiki.py             # 实体百科引擎（Read-Reflect-Overwrite）
-│   └── orchestrator.py         # 混合编排（由图引路 + 由文生智）
+│   ├── orchestrator.py         # 混合编排（由图引路 + 由文生智）
+│   └── provider.py             # LLM 统一接入层（Anthropic / OpenAI）
 ├── static/
 │   └── index.html              # 单页前端（D3.js + Marked.js）
 ├── docs/
@@ -174,9 +396,10 @@ demo/
 
 | 组件 | 选择 | 理由 |
 |------|------|------|
-| NER/RE 模型 | **Claude Haiku 4.5** + `cache_control: ephemeral` | 长 system prompt 可缓存，每次调用仅 ~$0.001 |
-| Wiki 写作模型 | **Claude Haiku 4.5** | 同上，结构化 Markdown 输出稳定 |
-| 综合推理模型 | **Claude Opus 4.7** + `thinking: adaptive` + `effort: high` | 跨实体关系推理需要深度思考；adaptive 模式让 Claude 自主决定思考深度 |
+| LLM 接入层 | **Provider 抽象**（`engines/provider.py`） | 统一 Anthropic / OpenAI SDK 差异，切换后端零代码改动 |
+| NER/RE 模型 | **Claude Haiku 4.5 / GPT-4o-mini** + `cache_control: ephemeral` | 长 system prompt 可缓存，每次调用低成本 |
+| Wiki 写作模型 | **Claude Haiku 4.5 / GPT-4o-mini** | 结构化 Markdown 输出稳定 |
+| 综合推理模型 | **Claude Opus 4.7 / GPT-4o** + `thinking: adaptive` | 跨实体关系推理需要深度思考 |
 | 图遍历 | BFS（`collections.deque`） | 子图模式天然契合「多跳推理」需求 |
 | 前端可视化 | **D3.js Force Layout** | 力导向布局直观展示实体聚类 |
 | Markdown 渲染 | **Marked.js** | 浏览器内零依赖、纯前端渲染 Wiki |

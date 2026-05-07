@@ -1,11 +1,12 @@
+import json
+import os
 import re
 from typing import Dict, List, Optional
-
-import anthropic
 
 from core.ports import IDocumentStoragePort, IGraphStoragePort
 from engines.gbrain import GbrainEngine
 from engines.llm_wiki import LLMWikiEngine
+from engines.provider import get_provider
 
 HYBRID_QUERY_SYSTEM = """You are an intelligent knowledge synthesis engine powered by the VGD Memory OS (Vision-Gbrain-Document).
 
@@ -33,7 +34,7 @@ class HybridOrchestrator:
     def __init__(self, gbrain: GbrainEngine, llm_wiki: LLMWikiEngine):
         self.gbrain = gbrain
         self.llm_wiki = llm_wiki
-        self.client = anthropic.Anthropic()
+        self.provider = get_provider()
 
     def _extract_entities_from_query(self, question: str) -> List[str]:
         all_nodes = self.gbrain.graph.get_all_nodes()
@@ -50,14 +51,13 @@ class HybridOrchestrator:
             return matched
 
         try:
-            response = self.client.messages.create(
-                model="claude-haiku-4-5",
-                max_tokens=256,
+            response = self.provider.messages_create(
+                model=os.getenv("VGD_EXTRACT_MODEL", "claude-haiku-4-5"),
+                max_tokens=1024,
                 system=ENTITY_EXTRACT_SYSTEM,
                 messages=[{"role": "user", "content": question}],
             )
-            import json
-            raw = response.content[0].text.strip()
+            raw = self.provider.extract_text(response)
             raw = re.sub(r"^```(?:json)?\n?", "", raw)
             raw = re.sub(r"\n?```$", "", raw)
             return json.loads(raw)
@@ -149,8 +149,8 @@ class HybridOrchestrator:
 
         combined_context = f"{graph_context}\n\n---\n\n**Wiki Knowledge Base:**\n\n{wiki_context}"
 
-        response = self.client.messages.create(
-            model="claude-opus-4-7",
+        response = self.provider.messages_create(
+            model=os.getenv("VGD_REASON_MODEL", "claude-opus-4-7"),
             max_tokens=4096,
             thinking={"type": "adaptive", "display": "summarized"},
             output_config={"effort": "high"},
@@ -165,11 +165,11 @@ class HybridOrchestrator:
 
         thinking_text = ""
         answer_text = ""
-        for block in response.content:
-            if block.type == "thinking":
-                thinking_text = getattr(block, "summary", "") or getattr(block, "thinking", "")
-            elif block.type == "text":
-                answer_text = block.text
+        for block in self.provider.extract_content_blocks(response):
+            if block["type"] == "thinking":
+                thinking_text = block["text"]
+            elif block["type"] == "text":
+                answer_text = block["text"]
 
         return {
             "answer": answer_text,

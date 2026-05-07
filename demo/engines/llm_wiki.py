@@ -1,11 +1,11 @@
 import hashlib
+import os
 import re
 from typing import Dict, List, Optional
 
-import anthropic
-
 from core.models import DocumentDTO
 from core.ports import IDocumentStoragePort
+from engines.provider import get_provider
 
 WIKI_CREATE_SYSTEM = """You are a knowledge base writer. Create a structured Markdown wiki page for the given entity.
 
@@ -50,7 +50,7 @@ Return ONLY the complete updated wiki page content, no explanation."""
 class LLMWikiEngine:
     def __init__(self, docs: IDocumentStoragePort):
         self.docs = docs
-        self.client = anthropic.Anthropic()
+        self.provider = get_provider()
 
     def _hash(self, content: str) -> str:
         return hashlib.sha256(content.encode()).hexdigest()[:16]
@@ -75,9 +75,9 @@ class LLMWikiEngine:
                 "{entity_label}", entity_label
             ).replace("{date}", "2026-05-06")
 
-            response = self.client.messages.create(
-                model="claude-haiku-4-5",
-                max_tokens=1024,
+            response = self.provider.messages_create(
+                model=os.getenv("VGD_WIKI_MODEL", "claude-haiku-4-5"),
+                max_tokens=4096,
                 system=[
                     {
                         "type": "text",
@@ -87,15 +87,15 @@ class LLMWikiEngine:
                 ],
                 messages=[{"role": "user", "content": prompt}],
             )
-            content = response.content[0].text.strip()
+            content = self.provider.extract_text(response)
         else:
             prompt = (
                 f"Current wiki page:\n\n{existing.content_markdown}\n\n"
                 f"---\n\nNew information to integrate:\n{new_facts}"
             )
-            response = self.client.messages.create(
-                model="claude-haiku-4-5",
-                max_tokens=1024,
+            response = self.provider.messages_create(
+                model=os.getenv("VGD_WIKI_MODEL", "claude-haiku-4-5"),
+                max_tokens=4096,
                 system=[
                     {
                         "type": "text",
@@ -105,7 +105,7 @@ class LLMWikiEngine:
                 ],
                 messages=[{"role": "user", "content": prompt}],
             )
-            content = response.content[0].text.strip()
+            content = self.provider.extract_text(response)
 
         version_hash = self._hash(content)
         self.docs.save_wiki(entity_uuid, entity_name, content, version_hash)
